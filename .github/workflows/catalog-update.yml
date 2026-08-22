@@ -1,0 +1,26 @@
+name: Catalog Update
+
+on:
+  schedule:
+    # Daily at 06:00 UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Dogfood this repo's own action.
+      # Uses a fine-grained PAT so CI runs on the PRs created by the action
+      # (PRs from the default GITHUB_TOKEN don't trigger workflows).
+      - uses: ./
+        with:
+          config: '.catalog-updaterc.json'
+          token: ${{ secrets.CI_PAT }}
