@@ -1,5 +1,4 @@
-import type { SemverChange } from './types'
-export type { SemverChange } from './types'
+import { type SemverChange } from './types'
 
 // ---------------------------------------------------------------------------
 // Glob matching
@@ -50,18 +49,22 @@ export function parseSemver({ version }: { version: string }): {
 		/^(\d+)\.(\d+)\.(\d+)(?:-([\w.]+))?(?:\+[\w.]+)?$/
 	)
 	if (!match) return null
-	const result: {
-		major: number
-		minor: number
-		patch: number
-		prerelease?: string
-	} = {
+	return {
 		major: Number(match[1]),
 		minor: Number(match[2]),
-		patch: Number(match[3])
+		patch: Number(match[3]),
+		prerelease: match[4]
 	}
-	if (match[4]) result.prerelease = match[4]
-	return result
+}
+
+/** Compare one prerelease identifier pair: numeric < string, then lexicographic. */
+function comparePrereleaseIdentifier(a: string, b: string): number {
+	const numA = /^\d+$/.test(a) ? Number(a) : null
+	const numB = /^\d+$/.test(b) ? Number(b) : null
+	if (numA !== null && numB !== null) return numA - numB
+	if (numA !== null) return -1 // numeric < string
+	if (numB !== null) return 1 // string > numeric
+	return a.localeCompare(b)
 }
 
 /** Compare prerelease identifiers per semver 2.0.0 spec: release > prerelease, numeric < string, left-to-right. */
@@ -82,19 +85,8 @@ function comparePrerelease(a?: string, b?: string): number {
 		if (pa === undefined) return -1
 		if (pb === undefined) return 1
 
-		const numA = /^\d+$/.test(pa) ? Number(pa) : null
-		const numB = /^\d+$/.test(pb) ? Number(pb) : null
-
-		if (numA !== null && numB !== null) {
-			if (numA !== numB) return numA - numB
-		} else if (numA !== null) {
-			return -1 // numeric < string
-		} else if (numB !== null) {
-			return 1 // string > numeric
-		} else {
-			const cmp = pa.localeCompare(pb)
-			if (cmp !== 0) return cmp
-		}
+		const cmp = comparePrereleaseIdentifier(pa, pb)
+		if (cmp !== 0) return cmp
 	}
 
 	return 0
@@ -114,8 +106,12 @@ export function classifySemverChange({
 	if (b.major < a.major) return null
 	if (b.minor > a.minor) return 'minor'
 	if (b.minor < a.minor) return null
-	if (b.patch > a.patch)
-		return a.prerelease ? (b.prerelease ? 'prerelease' : 'release') : 'patch'
+	if (b.patch > a.patch) {
+		if (a.prerelease) {
+			return b.prerelease ? 'prerelease' : 'release'
+		}
+		return 'patch'
+	}
 	if (b.patch < a.patch) return null
 	// Same major.minor.patch — compare prerelease
 	const cmp = comparePrerelease(a.prerelease, b.prerelease)
@@ -133,6 +129,11 @@ export function compareSemver({ a, b }: { a: string; b: string }): number {
 	return comparePrerelease(pa.prerelease, pb.prerelease)
 }
 
+/** Descending semver comparator (newest first). */
+function compareSemverDescending(a: string, b: string): number {
+	return compareSemver({ a: b, b: a })
+}
+
 /** Parse version from GitHub release tag formats: v1.2.3, 1.2.3, name@1.2.3, @scope/name@1.2.3 */
 export function extractVersionFromTag({ tag }: { tag: string }): string | null {
 	const atMatch = tag.match(/@(\d+\.\d+\.\d+.*)$/)
@@ -142,22 +143,23 @@ export function extractVersionFromTag({ tag }: { tag: string }): string | null {
 	return null
 }
 
+/** Maximum number of intermediate versions included in release notes. */
+const INTERMEDIATE_VERSIONS_CAP = 10
+
 /**
  * Return versions where current < version <= latest, sorted descending (newest first).
- * Excludes pre-releases unless `includePrerelease` is set. Caps at maxVersions.
+ * Excludes pre-releases unless `includePrerelease` is set. Caps at 10 versions.
  * Falls back to [latestVersion] if no intermediate versions found.
  */
 export function getIntermediateVersions({
 	publishedVersions,
 	currentVersion,
 	latestVersion,
-	maxVersions = 10,
 	includePrerelease = false
 }: {
 	publishedVersions: string[]
 	currentVersion: string
 	latestVersion: string
-	maxVersions?: number
 	includePrerelease?: boolean
 }): string[] {
 	const intermediate = publishedVersions
@@ -169,8 +171,8 @@ export function getIntermediateVersions({
 				compareSemver({ a: v, b: latestVersion }) <= 0
 			)
 		})
-		.toSorted((a, b) => compareSemver({ a: b, b: a }))
-		.slice(0, maxVersions)
+		.toSorted(compareSemverDescending)
+		.slice(0, INTERMEDIATE_VERSIONS_CAP)
 
 	if (intermediate.length === 0) return [latestVersion]
 	return intermediate

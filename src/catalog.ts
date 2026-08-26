@@ -1,5 +1,12 @@
-import type { CatalogEntry } from './types'
+import { type CatalogEntry } from './types'
 import { parseSemver } from './utils'
+
+/** Detect the range prefix (`^`, `~`) or empty string for a pinned version. */
+function detectRangePrefix(raw: string): '^' | '~' | '' {
+	if (raw.startsWith('^')) return '^'
+	if (raw.startsWith('~')) return '~'
+	return ''
+}
 
 /** Parse the `catalog` field from package.json into structured entries. */
 export function parseCatalog({
@@ -15,44 +22,32 @@ export function parseCatalog({
 		const aliasNpmName = aliasMatch?.[1]
 		const aliasVersion = aliasMatch?.[2]
 		if (aliasNpmName && aliasVersion) {
-			const aliasPrefix = aliasVersion.startsWith('^')
-				? ('^' as const)
-				: aliasVersion.startsWith('~')
-					? ('~' as const)
-					: ('' as const)
+			const aliasPrefix = detectRangePrefix(aliasVersion)
 			const cleanVersion = aliasPrefix ? aliasVersion.slice(1) : aliasVersion
 			if (!parseSemver({ version: cleanVersion })) continue
 
 			entries.push({
 				name,
-				raw,
 				npmName: aliasNpmName,
 				currentVersion: cleanVersion,
 				rangePrefix: aliasPrefix,
-				isAlias: true,
-				aliasName: aliasNpmName
+				isAlias: true
 			})
 			continue
 		}
 
 		// Handle range prefixes (e.g., "^6.1.1" or "~6.1.1")
-		const rangePrefix = raw.startsWith('^')
-			? ('^' as const)
-			: raw.startsWith('~')
-				? ('~' as const)
-				: ('' as const)
+		const rangePrefix = detectRangePrefix(raw)
 		const version = rangePrefix ? raw.slice(1) : raw
 
 		if (!parseSemver({ version })) continue
 
 		entries.push({
 			name,
-			raw,
 			npmName: name,
 			currentVersion: version,
 			rangePrefix,
-			isAlias: false,
-			aliasName: null
+			isAlias: false
 		})
 	}
 
