@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { parseFixedVersion, computeOverrides, buildOverridePrBody, isOverrideBranchOutdated, buildOverrideBranchUpdate, overrideKey } from '../src/audit'
-import type { AuditAdvisory, AuditResult, OverrideEntry, Severity } from '../src/types'
+import { parseFixedVersion, computeOverrides, buildOverridePrBody, isOverrideBranchOutdated, buildOverrideBranchUpdate, overrideKey, isToolOverrideKey } from '../src/audit'
+import { type AuditAdvisory, type AuditResult, type OverrideEntry } from '../src/types'
 
 function makeAdvisory(overrides: Partial<AuditAdvisory> = {}): AuditAdvisory {
   return {
     id: 1234,
     url: 'https://github.com/advisories/GHSA-1234',
     title: 'Test Advisory',
-    severity: 'high' as Severity,
+    severity: 'high',
     vulnerable_versions: '<1.0.0',
     cwe: ['CWE-79'],
     cvss: { score: 7.5, vectorString: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N' },
@@ -145,7 +145,7 @@ describe('computeOverrides', () => {
     })
 
     expect(result).toHaveLength(2)
-    const sorted = [...result].sort((a, b) => a.vulnerableRange.localeCompare(b.vulnerableRange))
+    const sorted = [...result].toSorted((a, b) => a.vulnerableRange.localeCompare(b.vulnerableRange))
     expect(sorted[0]!.vulnerableRange).toBe('>=7.0.0 <7.5.10')
     expect(sorted[0]!.fixedVersion).toBe('7.5.10')
     expect(overrideKey(sorted[0]!)).toBe('ws@>=7.0.0 <7.5.10')
@@ -202,7 +202,7 @@ describe('computeOverrides', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildOverridePrBody', () => {
-  const overrides: OverrideEntry[] = [
+  const overrides: Array<OverrideEntry> = [
     {
       packageName: 'lodash',
       vulnerableRange: '<4.17.21',
@@ -240,7 +240,7 @@ describe('buildOverridePrBody', () => {
 
 describe('buildOverrideBranchUpdate', () => {
   test('builds correct branch name', () => {
-    const overrides: OverrideEntry[] = [{
+    const overrides: Array<OverrideEntry> = [{
       packageName: 'lodash',
       vulnerableRange: '<4.17.21',
       fixedVersion: '4.17.21',
@@ -256,7 +256,7 @@ describe('buildOverrideBranchUpdate', () => {
   })
 
   test('singular title for one dependency', () => {
-    const overrides: OverrideEntry[] = [{
+    const overrides: Array<OverrideEntry> = [{
       packageName: 'lodash',
       vulnerableRange: '<4.17.21',
       fixedVersion: '4.17.21',
@@ -272,7 +272,7 @@ describe('buildOverrideBranchUpdate', () => {
   })
 
   test('plural title for multiple dependencies', () => {
-    const overrides: OverrideEntry[] = [
+    const overrides: Array<OverrideEntry> = [
       { packageName: 'lodash', vulnerableRange: '<4.17.21', fixedVersion: '4.17.21', advisories: [makeAdvisory()] },
       { packageName: 'minimist', vulnerableRange: '<1.2.6', fixedVersion: '1.2.6', advisories: [makeAdvisory()] }
     ]
@@ -286,7 +286,7 @@ describe('buildOverrideBranchUpdate', () => {
   })
 
   test('appends titleSuffix for working directory', () => {
-    const overrides: OverrideEntry[] = [{
+    const overrides: Array<OverrideEntry> = [{
       packageName: 'lodash',
       vulnerableRange: '<4.17.21',
       fixedVersion: '4.17.21',
@@ -303,8 +303,8 @@ describe('buildOverrideBranchUpdate', () => {
     expect(result.title).toBe('fix(security): override 1 vulnerable transitive dependency in /apps/backend')
   })
 
-  test('applyChanges uses scoped keys and preserves existing', () => {
-    const overrides: OverrideEntry[] = [{
+  test('applyChanges removes stale tool overrides and preserves user overrides', () => {
+    const overrides: Array<OverrideEntry> = [{
       packageName: 'lodash',
       vulnerableRange: '<4.17.21',
       fixedVersion: '4.17.21',
@@ -316,12 +316,30 @@ describe('buildOverrideBranchUpdate', () => {
       branchPrefix: 'catalog-update'
     })
 
-    const pkg: Record<string, unknown> = { overrides: { 'minimist@<1.2.6': '1.2.6' } }
+const pkg = {
+      overrides: {
+        'minimist@<1.2.6': '1.2.6', // stale tool override — should be removed
+        'some-package': '1.0.0' // user override — should be preserved
+      }
+    }
     result.applyChanges(pkg)
 
-    const applied = pkg.overrides as Record<string, string>
-    expect(applied['lodash@<4.17.21']).toBe('4.17.21')
-    expect(applied['minimist@<1.2.6']).toBe('1.2.6')
+    expect(pkg.overrides).toEqual({
+      'lodash@<4.17.21': '4.17.21',
+      'some-package': '1.0.0'
+    })
+  })
+
+  test('applyChanges removes overrides field when empty', () => {
+    const result = buildOverrideBranchUpdate({
+      overrides: [],
+      branchPrefix: 'catalog-update'
+    })
+
+    const pkg = { overrides: { 'minimist@<1.2.6': '1.2.6' } }
+    result.applyChanges(pkg)
+
+    expect(pkg.overrides).toBeUndefined()
   })
 })
 
@@ -330,7 +348,7 @@ describe('buildOverrideBranchUpdate', () => {
 // ---------------------------------------------------------------------------
 
 describe('isOverrideBranchOutdated', () => {
-  const expectedOverrides: OverrideEntry[] = [
+  const expectedOverrides: Array<OverrideEntry> = [
     {
       packageName: 'lodash',
       vulnerableRange: '<4.17.21',
@@ -361,5 +379,65 @@ describe('isOverrideBranchOutdated', () => {
       expectedOverrides
     })
     expect(result).toBe(true)
+  })
+
+  test('returns true when branch has extra tool-generated overrides', () => {
+    const result = isOverrideBranchOutdated({
+      branchPackageJson: {
+        overrides: {
+          'lodash@<4.17.21': '4.17.21',
+          'minimist@<1.2.6': '1.2.6'
+        }
+      },
+      expectedOverrides
+    })
+    expect(result).toBe(true)
+  })
+
+  test('returns false when branch has extra user-added overrides', () => {
+    const result = isOverrideBranchOutdated({
+      branchPackageJson: {
+        overrides: {
+          'lodash@<4.17.21': '4.17.21',
+          'some-package': '2.0.0'
+        }
+      },
+      expectedOverrides
+    })
+    expect(result).toBe(false)
+  })
+
+  test('returns false when no overrides expected and none present', () => {
+    const result = isOverrideBranchOutdated({
+      branchPackageJson: {},
+      expectedOverrides: []
+    })
+    expect(result).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// isToolOverrideKey
+// ---------------------------------------------------------------------------
+
+describe('isToolOverrideKey', () => {
+  test('returns true for tool-generated key with < bound', () => {
+    expect(isToolOverrideKey('lodash@<4.17.21')).toBe(true)
+  })
+
+  test('returns true for tool-generated key with >= bound', () => {
+    expect(isToolOverrideKey('ws@>=7.0.0 <7.5.10')).toBe(true)
+  })
+
+  test('returns false for plain package name', () => {
+    expect(isToolOverrideKey('lodash')).toBe(false)
+  })
+
+  test('returns false for scoped package without range', () => {
+    expect(isToolOverrideKey('@types/node')).toBe(false)
+  })
+
+  test('returns true for scoped package with vulnerable range', () => {
+    expect(isToolOverrideKey('@scope/pkg@<2.0.0')).toBe(true)
   })
 })

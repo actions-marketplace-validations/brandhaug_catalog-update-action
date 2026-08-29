@@ -1,17 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import { filterByReleaseAge, getVersionAgeDays } from '../src/registry'
-import type { PackageMetadata, UpdateCandidate } from '../src/types'
+import { type PackageMetadata, type UpdateCandidate } from '../src/types'
 
 const NOW = new Date('2026-03-31T12:00:00.000Z')
 
 function makeCandidate(overrides: Partial<UpdateCandidate> & { name: string; latestVersion: string }): UpdateCandidate {
   return {
-    raw: overrides.latestVersion,
     npmName: overrides.name,
     currentVersion: '1.0.0',
-    hasCaret: false,
+    rangePrefix: "",
     isAlias: false,
-    aliasName: null,
     changeType: 'minor',
     ...overrides
   }

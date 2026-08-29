@@ -13,12 +13,10 @@ describe('parseCatalog', () => {
     expect(entries).toHaveLength(2)
     expect(entries[0]).toEqual({
       name: 'react',
-      raw: '19.0.0',
       npmName: 'react',
       currentVersion: '19.0.0',
-      hasCaret: false,
-      isAlias: false,
-      aliasName: null
+      rangePrefix: "",
+      isAlias: false
     })
   })
 
@@ -29,7 +27,18 @@ describe('parseCatalog', () => {
     expect(entries[0]).toMatchObject({
       name: 'react',
       currentVersion: '19.0.0',
-      hasCaret: true
+      rangePrefix: "^"
+    })
+  })
+
+  test('parses tilde ranges', () => {
+    const entries = parseCatalog({ catalog: { lodash: '~4.17.0' } })
+
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({
+      name: 'lodash',
+      currentVersion: '4.17.0',
+      rangePrefix: "~"
     })
   })
 
@@ -39,12 +48,10 @@ describe('parseCatalog', () => {
     expect(entries).toHaveLength(1)
     expect(entries[0]).toEqual({
       name: 'vite',
-      raw: 'npm:rolldown-vite@7.3.1',
       npmName: 'rolldown-vite',
       currentVersion: '7.3.1',
-      hasCaret: false,
-      isAlias: true,
-      aliasName: 'rolldown-vite'
+      rangePrefix: "",
+      isAlias: true
     })
   })
 
@@ -55,7 +62,19 @@ describe('parseCatalog', () => {
     expect(entries[0]).toMatchObject({
       npmName: 'rolldown-vite',
       currentVersion: '7.3.1',
-      hasCaret: true,
+      rangePrefix: "^",
+      isAlias: true
+    })
+  })
+
+  test('parses npm: aliases with tilde', () => {
+    const entries = parseCatalog({ catalog: { vite: 'npm:rolldown-vite@~7.3.1' } })
+
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({
+      npmName: 'rolldown-vite',
+      currentVersion: '7.3.1',
+      rangePrefix: "~",
       isAlias: true
     })
   })
@@ -105,7 +124,7 @@ describe('parseCatalog', () => {
       name: '@sentry/react',
       npmName: '@sentry/react',
       currentVersion: '8.0.0',
-      hasCaret: true
+      rangePrefix: "^"
     })
   })
 })

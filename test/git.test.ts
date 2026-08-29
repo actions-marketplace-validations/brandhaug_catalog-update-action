@@ -1,17 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import { buildCatalogValue, buildCatalogPrBody, buildCatalogBranchUpdate } from '../src/git'
-import type { Config, UpdateCandidate, VersionReleaseNote } from '../src/types'
+import { type Config, type UpdateCandidate, type VersionReleaseNote } from '../src/types'
 
 function makeCandidate(overrides: Partial<UpdateCandidate> & { name: string }): UpdateCandidate {
   return {
-    raw: overrides.name,
     npmName: overrides.name,
     currentVersion: '1.0.0',
     latestVersion: '2.0.0',
     changeType: 'major',
-    hasCaret: false,
+    rangePrefix: "",
     isAlias: false,
-    aliasName: null,
     ...overrides
   }
 }
@@ -22,9 +20,11 @@ const baseConfig: Config = {
   maxOpenPrs: 20,
   concurrency: 10,
   packageManager: 'bun',
+  minReleaseAgeDays: 0,
   groups: [],
   ignore: [],
-  audit: { enabled: true, minimumSeverity: 'moderate' }
+  audit: { enabled: true, minimumSeverity: 'moderate' },
+  autoMerge: { enabled: false, mergeMethod: 'squash' }
 }
 
 // ---------------------------------------------------------------------------
@@ -41,9 +41,16 @@ describe('buildCatalogValue', () => {
 
   test('returns caret version', () => {
     const result = buildCatalogValue({
-      update: makeCandidate({ name: 'react', latestVersion: '19.1.0', hasCaret: true })
+      update: makeCandidate({ name: 'react', latestVersion: '19.1.0', rangePrefix: "^" })
     })
     expect(result).toBe('^19.1.0')
+  })
+
+  test('returns tilde version', () => {
+    const result = buildCatalogValue({
+      update: makeCandidate({ name: 'lodash', latestVersion: '4.18.0', rangePrefix: "~" })
+    })
+    expect(result).toBe('~4.18.0')
   })
 
   test('returns npm: alias format', () => {
@@ -52,10 +59,23 @@ describe('buildCatalogValue', () => {
         name: 'vite',
         latestVersion: '7.4.0',
         isAlias: true,
-        aliasName: 'rolldown-vite'
+        npmName: 'rolldown-vite'
       })
     })
     expect(result).toBe('npm:rolldown-vite@7.4.0')
+  })
+
+  test('returns npm: alias format with caret', () => {
+    const result = buildCatalogValue({
+      update: makeCandidate({
+        name: 'vite',
+        latestVersion: '7.4.0',
+        isAlias: true,
+        npmName: 'rolldown-vite',
+        rangePrefix: "^"
+      })
+    })
+    expect(result).toBe('npm:rolldown-vite@^7.4.0')
   })
 })
 
@@ -82,7 +102,7 @@ describe('buildCatalogPrBody', () => {
     const updates = [
       makeCandidate({ name: 'react', currentVersion: '18.0.0', latestVersion: '19.0.0' })
     ]
-    const releaseNotes = new Map<string, VersionReleaseNote[]>([
+    const releaseNotes = new Map<string, Array<VersionReleaseNote>>([
       ['react', [{ version: '19.0.0', body: 'React 19 is here!' }]]
     ])
 
@@ -152,11 +172,10 @@ describe('buildCatalogBranchUpdate', () => {
       releaseNotes: new Map()
     })
 
-    const pkg: Record<string, unknown> = { catalog: { react: '18.0.0', zod: '3.0.0' } }
+    const pkg = { catalog: { react: '18.0.0', zod: '3.0.0' } }
     result.applyChanges(pkg)
 
-    expect((pkg.catalog as Record<string, string>).react).toBe('19.0.0')
-    expect((pkg.catalog as Record<string, string>).zod).toBe('3.0.0')
+    expect(pkg.catalog).toEqual({ react: '19.0.0', zod: '3.0.0' })
   })
 
   test('applyChanges throws when catalog missing', () => {
@@ -168,7 +187,7 @@ describe('buildCatalogBranchUpdate', () => {
       releaseNotes: new Map()
     })
 
-    const pkg: Record<string, unknown> = {}
+    const pkg = {}
     expect(() => result.applyChanges(pkg)).toThrow('No valid catalog found')
   })
 

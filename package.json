@@ -1,6 +1,6 @@
 {
   "name": "catalog-update-action",
-  "version": "0.5.2",
+  "version": "0.12.1",
   "description": "Automated dependency updates for Bun catalog: protocol",
   "license": "MIT",
   "author": "brandhaug",
@@ -33,10 +33,30 @@
     "start": "bun src/main.ts",
     "dry-run": "bun src/main.ts --dry-run",
     "test": "bun test",
-    "check": "bun x --bun tsc --noEmit"
+    "lint": "bunx oxlint --type-aware src/ test/",
+    "fmt": "bunx oxfmt src/",
+    "fmt:check": "bunx oxfmt --check src/",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
-    "typescript": "^5.8.0",
-    "@types/bun": "^1.2.0"
+    "@types/bun": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "ultracite": "7.10.6"
+  },
+  "catalog": {
+    "oxfmt": "0.65.0",
+    "oxlint": "1.79.0",
+    "oxlint-tsgolint": "7.0.2001",
+    "@types/bun": "1.4.0"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "packageManager": "bun@1.4.0",
+  "workspaces": [],
+  "dependencies": {
+    "zod": "4.4.3"
   }
 }
